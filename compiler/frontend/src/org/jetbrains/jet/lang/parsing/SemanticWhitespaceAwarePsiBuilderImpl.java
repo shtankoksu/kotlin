@@ -165,9 +165,23 @@ public class SemanticWhitespaceAwarePsiBuilderImpl extends PsiBuilderAdapter imp
     public IElementType lookAhead(int steps) {
         if (!joinComplexTokens()) return super.lookAhead(steps);
 
-        if (complexTokens.contains(getTokenType())) {
-            return super.lookAhead(steps + 1);
+        IElementType elementType = super.getTokenType();
+        int rawLookupSteps = 0;
+        int lookAheadSteps = 0;
+        int skippedJoinedTokens = 0;
+        while (true) {
+            IElementType joinedTokenType = getJoinedTokenType(elementType, rawLookupSteps + 1);
+            if (lookAheadSteps == steps) {
+                return joinedTokenType;
+            }
+            if (complexTokens.contains(joinedTokenType)) {
+                skippedJoinedTokens++;
+            }
+            lookAheadSteps++;
+            elementType = super.lookAhead(lookAheadSteps + skippedJoinedTokens);
+            do {
+                rawLookupSteps++;
+            } while (rawLookup(rawLookupSteps) != elementType);
         }
-        return getJoinedTokenType(super.lookAhead(steps), 2);
     }
 }

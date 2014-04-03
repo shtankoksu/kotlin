@@ -1193,7 +1193,10 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
             lookupConstructorExpressionsInClosureIfPresent(constructorContext);
         }
 
-        assert constructorDescriptor != null : "Constructor not found for class: " + descriptor;
+        if (constructorDescriptor == null) {
+            throw new AssertionError("Constructor not found for class: " + descriptor);
+        }
+
         final JvmMethodSignature constructorSignature = typeMapper.mapSignature(constructorDescriptor);
 
         functionCodegen.generateMethod(myClass, constructorSignature, constructorDescriptor, constructorContext,

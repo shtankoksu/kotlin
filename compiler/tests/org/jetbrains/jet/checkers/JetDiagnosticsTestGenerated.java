@@ -1828,6 +1828,11 @@ public class JetDiagnosticsTestGenerated extends AbstractJetDiagnosticsTest {
                 doTest("compiler/testData/diagnostics/tests/cyclicHierarchy/classIndirectlyInheritsNested.kt");
             }
             
+            @TestMetadata("classIndirectlyInheritsNestedThroughJava.kt")
+            public void testClassIndirectlyInheritsNestedThroughJava() throws Exception {
+                doTest("compiler/testData/diagnostics/tests/cyclicHierarchy/classIndirectlyInheritsNestedThroughJava.kt");
+            }
+            
             @TestMetadata("classInheritsNested.kt")
             public void testClassInheritsNested() throws Exception {
                 doTest("compiler/testData/diagnostics/tests/cyclicHierarchy/classInheritsNested.kt");

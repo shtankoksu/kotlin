@@ -1,0 +1,11 @@
+package test
+
+internal final annotation class Anno : jet.Annotation {
+    /*primary*/ public constructor Anno(/*0*/ value: jet.BooleanArray)
+    internal final val value: jet.BooleanArray
+        internal final fun <get-value>(): jet.BooleanArray
+}
+
+test.Anno(value = [true, false]: jet.BooleanArray) internal final class Class {
+    /*primary*/ public constructor Class()
+}

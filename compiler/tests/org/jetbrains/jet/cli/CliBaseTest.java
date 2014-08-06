@@ -25,6 +25,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.jet.JetTestUtils;
 import org.jetbrains.jet.cli.common.CLICompiler;
 import org.jetbrains.jet.cli.common.ExitCode;
+import org.jetbrains.jet.cli.common.KotlinVersion;
 import org.jetbrains.jet.cli.js.K2JSCompiler;
 import org.jetbrains.jet.cli.jvm.K2JVMCompiler;
 import org.jetbrains.jet.lang.resolve.java.JvmAbi;
@@ -67,6 +68,8 @@ public class CliBaseTest {
         String normalizedOutputWithoutExitCode = pureOutput
                 .replace(new File(testDataDir).getAbsolutePath(), "$TESTDATA_DIR$")
                 .replace("expected ABI version is " + Integer.toString(JvmAbi.VERSION), "expected ABI version is $ABI_VERSION$")
+                .replaceAll("java version.*\\n.*\\n.*", "\\$JAVA_VERSION\\$")
+                .replaceAll(KotlinVersion.VERSION, "@snapshot@")
                 .replace("\\", "/");
 
         return normalizedOutputWithoutExitCode + exitCode;

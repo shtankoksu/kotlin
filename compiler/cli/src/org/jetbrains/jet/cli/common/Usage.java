@@ -32,6 +32,12 @@ class Usage {
     public static void print(@NotNull PrintStream target, @NotNull CommonCompilerArguments arguments, boolean extraHelp) {
         target.println("Usage: " + arguments.executableScriptFileName() + " <options> <source files>");
         target.println("where " + (extraHelp ? "advanced" : "possible") + " options include:");
+
+        if (!extraHelp) {
+            target.println(renderArgumentUsage("D<name>=<value>", "-", "", "Set runtime system property", null));
+            target.println(renderArgumentUsage("J<flag>", "-", "", "Pass <flag> directly to the runtime system", null));
+        }
+
         for (Class<?> clazz = arguments.getClass(); clazz != null; clazz = clazz.getSuperclass()) {
             for (Field field : clazz.getDeclaredFields()) {
                 String usage = fieldUsage(field, extraHelp);
@@ -57,25 +63,35 @@ class Usage {
         boolean extraOption = value.startsWith("X") && value.length() > 1;
         if (extraHelp != extraOption) return null;
 
-        String prefix = argument.prefix();
+        return renderArgumentUsage(value, argument.prefix(), argument.alias(), argument.description(),
+                                   description != null ? description.value() : null);
+    }
 
+    @NotNull
+    private static String renderArgumentUsage(
+            @NotNull String value,
+            @NotNull String prefix,
+            @NotNull String alias,
+            @NotNull String argumentDescription,
+            @Nullable String valueDescription
+    ) {
         StringBuilder sb = new StringBuilder("  ");
         sb.append(prefix);
         sb.append(value);
-        if (!argument.alias().isEmpty()) {
+        if (!alias.isEmpty()) {
             sb.append(" (");
             sb.append(prefix);
-            sb.append(argument.alias());
+            sb.append(alias);
             sb.append(")");
         }
-        if (description != null) {
+        if (valueDescription != null) {
             sb.append(" ");
-            sb.append(description.value());
+            sb.append(valueDescription);
         }
         while (sb.length() < OPTION_NAME_PADDING_WIDTH) {
             sb.append(" ");
         }
-        sb.append(argument.description());
+        sb.append(argumentDescription);
         return sb.toString();
     }
 }

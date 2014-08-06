@@ -79,6 +79,11 @@ public class KotlincExecutableTestGenerated extends AbstractKotlincExecutableTes
             doJvmTest("compiler/testData/cli/jvm/nonExistingSourcePath.args");
         }
         
+        @TestMetadata("passFlagToJava.args")
+        public void testPassFlagToJava() throws Exception {
+            doJvmTest("compiler/testData/cli/jvm/passFlagToJava.args");
+        }
+        
         @TestMetadata("signatureClash.args")
         public void testSignatureClash() throws Exception {
             doJvmTest("compiler/testData/cli/jvm/signatureClash.args");

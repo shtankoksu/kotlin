@@ -1,6 +1,8 @@
 Invalid argument: -wrong-argument
 Usage: kotlinc-jvm <options> <source files>
 where possible options include:
+  -D<name>=<value>           Set runtime system property
+  -J<flag>                   Pass <flag> directly to the runtime system
   -d <directory|jar>         Destination for generated class files
   -classpath (-cp) <path>    Paths where to find user class files
   -annotations <path>        Paths to external annotations

@@ -1,0 +1,146 @@
+#!/bin/bash --posix
+
+# Copyright 2010-2014 JetBrains s.r.o.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Use cases:
+# kotlin _DefaultPackage    app
+# kotlin foo.FooPackage     app
+# kotlin -p ''              app
+# kotlin -p foo             app
+# kotlin 1.jar              app
+# kotlin 1.kts              compiler + "-script"
+# kotlin -e '2+2'           compiler + "-script"
+# kotlin                    compiler (REPL)
+
+usage() {
+cat <<USAGE
+Usage: kotlin <options> [<jar>|-p <package>|<class>|-e <expression>|<script> <arguments>]
+where possible options include:
+  -D<name>=<value>           Set runtime system property
+  -J<flag>                   Pass <flag> directly to the runtime system
+  -classpath (-cp) <path>    Paths where to find user class files
+
+All Kotlin compiler's options can be used when evaluating scripts or expressions.
+Type "kotlinc -help" to read about those.
+USAGE
+}
+
+usageAndExit() {
+  usage
+  exit 1
+}
+
+KOTLIN_HOME=`dirname "$0"`
+KOTLIN_HOME=`cd "$KOTLIN_HOME"; pwd -P`
+KOTLIN_HOME=`cd "$KOTLIN_HOME"/..; pwd`
+
+is_program_args=0
+
+declare -a java_args
+declare -a kotlin_args
+declare -a program_args
+
+classpath=""
+
+while [[ $# != 0 ]]; do
+  if [[ is_program_args -eq 1 ]]; then
+    program_args=("${program_args[@]}" "$1")
+    shift
+    continue
+  fi
+
+  case "$1" in
+    -D*)
+      java_args=("${java_args[@]}" "$1")
+      shift
+      ;;
+    -J*)
+      java_args=("${java_args[@]}" "${1:2}")
+      shift
+      ;;
+    -classpath | -cp)
+      shift
+      if [[ $# == 0 ]]; then
+        usageAndExit
+      fi
+      classpath="$classpath:$1"
+      shift
+      ;;
+    -p)
+      shift
+      if [[ $# == 0 ]]; then
+        usageAndExit
+      fi
+      if [[ -z $1 ]]; then
+        run_class="_DefaultPackage"
+      else
+        run_class="$1.$(tr '[:lower:]' '[:upper:]' <<< ${1:0:1})${1:1}Package"
+      fi
+      shift
+      is_program_args=1
+      ;;
+    -e)
+      shift
+      if [[ $# == 0 ]]; then
+        usageAndExit
+      fi
+      run_expression="$1"
+      shift
+      is_program_args=1
+      ;;
+    -*)
+      kotlin_args=("${kotlin_args[@]}" "$1")
+      shift
+      ;;
+    *.jar)
+      run_jar="$1"
+      shift
+      is_program_args=1
+      ;;
+    *.kts)
+      run_script="$1"
+      shift
+      is_program_args=1
+      ;;
+    *)
+      run_class="$1"
+      shift
+      is_program_args=1
+      ;;
+  esac
+done
+
+if [[ -z $classpath ]]; then
+  classpath=":."
+fi
+classpath="${classpath}:${KOTLIN_HOME}/lib/kotlin-runtime.jar"
+classpath="${classpath:1}"
+
+echo "java_args: ${java_args[@]}"
+echo "kotlin_args: ${kotlin_args[@]}"
+echo "program_args: ${program_args[@]}"
+echo "classpath: $classpath"
+echo "run_jar: $run_jar"
+echo "run_class: $run_class"
+echo "run_expression: $run_expression"
+echo "run_script: $run_script"
+
+if [[ -n $run_class ]]; then
+  # TODO: warn if kotlin_args are not empty
+  java -classpath "$classpath" "${java_args[@]}" $run_class "${program_args[@]}"
+elif [[ -n $run_jar ]]; then
+  # TODO: warn if kotlin_args are not empty
+  java -classpath "$classpath" "${java_args[@]}" -jar $run_jar "${program_args[@]}"
+fi

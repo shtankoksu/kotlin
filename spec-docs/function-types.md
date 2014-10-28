@@ -1,14 +1,56 @@
 # How Function Types Work in Kotlin on JVM
 
+## Goals and motivation
+
+TODO
+
 ## Extension functions
 
-Extension function type `T.(P) -> R` is treated as `[kotlin.extension] Function2<T, P, R>`.
+Extension function type `T.(P) -> R` is now treated as `[kotlin.extension] Function2<T, P, R>`.
 `kotlin.extension` is a built-in annotation only applicable to types.
-This means that an extension function will be applicable where the usual function is expected but not vice versa
-(as long as, of course, the notion of subtype involves checking for type annotations).
+So effectively functions and extension functions now have the same type,
+how can we make extension function expressions support extension function call syntax?
+
+We introduce the following convention: expression `foo` of type `Foo` can be used as an extension function
+(i.e. `object.foo(arguments)`) if and only if there is a function `invokeExtension`
+with the corresponding parameters available on the type `Foo`.
+This function may be declared in class `Foo` or somewhere as an extension to `Foo`.
+
+We declare `invokeExtension` to be available on all extension functions:
+
+``` kotlin
+package kotlin
+
+...
+fun <T, P0, R> (T.(P0) -> R).invokeExtension(p0: P0): R = this(p0)
+...
+```
+
+So now an expression type-checked to an "extension function type" can be used with the desired syntax.
+**But**, since a function type and a corresponding extension function type effectively have the same classifier (`FunctionN`),
+they are coercible to each other and therefore our `invokeExtension` will be applicable to the usual
+functions as well, which is something we don't want to happen! Example:
+
+``` kotlin
+val lengthHacked: (String) -> Int = { it.length }
+
+fun test() = "".lengthHacked()  // <-- bad! The declared function accepts a single non-receiver argument
+```
+
+And here we introduce the following **restriction**: given a call `object.foo(arguments)`,
+if `foo` doesn't have `[extension] FunctionN` in all of its supertypes, then the call will not compile.
+So, to make your class invokable as an extension you need to inherit from `[extension] Function`:
+
+``` kotlin
+class F : (String.() -> Int) {
+    override fun invoke(receiver: String) = receiver.length
+}
+```
 
 The problem of representing functions therefore is fully reduced to the usual function types,
 with additional `extension` annotations supplied where needed.
+
+TODO: wat?
 
 ## Types for type checker and for JVM runtime
 

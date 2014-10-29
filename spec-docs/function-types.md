@@ -1,12 +1,17 @@
 # How Function Types Work in Kotlin on JVM
 
-## Goals and motivation
+## Goals
 
-TODO
+* Get rid of 23 physical function classes. The problem with them is,
+reflection introduces a few kinds of functions but each of them should be invokable as a normal function as well,
+and so we get `{top-level, member, extension, member-extension, local, ...} * 23` = A LOT of classes in the runtime.
+* Make extension functions coercible to normal functions (with an extra parameter).
+At the moment it's not possible to do `listOfStrings.map(String::length)`
+* Allow functions with more than 23 parameters, theoretically any number of parameters (in practice 255 on JVM).
 
 ## Extension functions
 
-Extension function type `T.(P) -> R` is now treated as `[kotlin.extension] Function2<T, P, R>`.
+Extension function type `T.(P) -> R` is now just a shorthand for `[kotlin.extension] Function2<T, P, R>`.
 `kotlin.extension` is a built-in annotation only applicable to types.
 So effectively functions and extension functions now have the same type,
 how can we make extension function expressions support extension function call syntax?
@@ -38,23 +43,23 @@ fun test() = "".lengthHacked()  // <-- bad! The declared function accepts a sing
 ```
 
 And here we introduce the following **restriction**: given a call `object.foo(arguments)`,
-if `foo` doesn't have `[extension] FunctionN` in all of its supertypes, then the call will not compile.
-So, to make your class invokable as an extension you need to inherit from `[extension] Function`:
+if `foo` is resolved exactly to the built-in extension function `invokeExtension`,
+then the call will not compile unless its receiver value is an object of the exact type `[extension] FunctionN`.
+So `invokeExtension` will yield an error when used on `FunctionN` objects and objects of `FunctionN` subtypes.
 
-``` kotlin
-class F : (String.() -> Int) {
-    override fun invoke(receiver: String) = receiver.length
-}
-```
+To make your class invokable as an extension you only need to declare `invokeExtension`.
+Declaring `invoke` (and maybe overriding it from `FunctionN`) will only make you class invokable *as a usual function*.
+Inheriting from a function type thus makes sense if you want your class to behave like a simple function.
+Inheriting from an extension function type however makes no sense and should be prohibited / frowned upon.
+In a broad sense, providing type annotations on supertypes (which is what inheriting from an extension function is)
+probably should be diagnosed in the compiler.
 
 The problem of representing functions therefore is fully reduced to the usual function types,
 with additional `extension` annotations supplied where needed.
 
-TODO: wat?
-
 ## Types for type checker and for JVM runtime
 
-The arity of the functional trait that the type checker can created in theory **is not limited** to any number,
+The arity of the functional trait that the type checker can create in theory **is not limited** to any number,
 but in practice should be limited to 255 on JVM.
 
 These traits are named `kotlin.Function0<R>`, `kotlin.Function1<P0, R>`, ..., `kotlin.Function42<P0, P1, ..., P41, R>`, ...
@@ -170,6 +175,31 @@ with many parameters.
 Note that when we analyze Kotlin sources we have type arguments for `FunctionLarge`, but they are lost after compilation.
 So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
 `FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
+
+So `Function0`..`Function22` are provided just as an **optimization** for frequently used functions and
+the number 23 itself has in fact no meaning, i.e. it doesn't limit anything.
+We can change it easily to something else if we want to.
+For example, for `KFunction`, `KMemberFunction`, ... this number will be zero:
+
+TODO: review these declarations
+
+``` kotlin
+package kotlin.reflect
+
+trait KFunction<out R> : Function<R> {
+    fun apply(vararg p: Any?): R
+}
+```
+
+``` kotlin
+package kotlin.reflect.jvm.internal
+
+abstract class KFunctionImpl(name, owner, arity, ...) : FunctionImpl(arity) {
+    // Reflection-specific stuff
+    // The only method which is abstract in this class is the needed invoke (or apply for many arguments),
+    // and it will be generated into specific subclasses (created by function references)
+}
+```
 
 ## Arity and invocation with vararg
 

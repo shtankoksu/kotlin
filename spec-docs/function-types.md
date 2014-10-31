@@ -2,24 +2,27 @@
 
 ## Goals
 
-* Get rid of 23 physical function classes. The problem with them is,
+* Get rid of 23 hardwired physical function classes. The problem with them is,
 reflection introduces a few kinds of functions but each of them should be invokable as a normal function as well, and so
 we get `{top-level, member, extension, member-extension, local, ...} * 23` = **a lot** of physical classes in the runtime.
 * Make extension functions coercible to normal functions (with an extra parameter).
 At the moment it's not possible to do `listOfStrings.map(String::length)`
 * Allow functions with more than 23 parameters, theoretically any number of parameters (in practice 255 on JVM).
+* At the same time, allow to implement Kotlin functions easily from Java: `new Function2() { ... }` and overriding `invoke` only would be the best.
+(But, of course, it makes no sense to introduce 256 interfaces for Java interop to satisfy the other goals.)
 
 ## Brief solution overview
 
 * Treat extension functions almost like non-extension functions with one extra parameter, allowing to use them interchangeably.
 * Introduce a physical class `Function` and unlimited number of *syhthetic* classes `Function0`, `Function1`, ... in the compiler front-end
-* On JVM, introduce optimized `Function0`..`Function22` and `FunctionLarge` for functions with many parameters.
+* On JVM, introduce `Function0`..`Function22`, which are optimized in a certain way,
+and `FunctionLarge` for functions with many parameters.
 When passing a lambda to Kotlin from Java, one will need to implement one of these interfaces.
 * Also on JVM (under the hood) add abstract `FunctionImpl` which implements all of `Fun0`..`Fun22` and `FunLarge`
 (throwing exceptions), and which knows its arity.
 Kotlin lambdas are translated to subclasses of this abstract class, passing the correct arity to the super constructor.
 * Provide a way to get arity of an arbitrary `Function` object (pretty straightforward).
-* Hack `is/as FunctionN` in codegen (and probably `KClass.cast()` in reflection) to check against `FunctionImpl` and its arity.
+* Hack `is/as FunctionN` in codegen (and probably `KClass.cast()` in reflection) to check against `Function` and its arity.
 
 ## Extension functions
 
@@ -198,10 +201,10 @@ since `FunctionLarge` doesn't and can't have types of its parameters.
 So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
 `FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
 
-So `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and
-the number 23 itself has in fact no meaning, i.e. it doesn't limit anything.
+So `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and for Java interop.
 We can change it easily to something else if we want to.
-For example, for `KFunction`, `KMemberFunction`, ... this number will be zero:
+For example, for `KFunction`, `KMemberFunction`, ... this number will be zero,
+since there's no point in implementing a hypothetical `KFunction5` from Java.
 
 ``` kotlin
 package kotlin.reflect

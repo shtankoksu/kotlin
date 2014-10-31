@@ -171,6 +171,9 @@ trait FunctionLarge<out R> : kotlin.Function<R> {
 
 TODO: naming
 
+TODO: usual hierarchy problems: there are no such members in `kotlin.Function42` (it only has `invoke()`),
+so inheritance from `FunctionN` for big `N` will need to be hacked somehow
+
 And another type annotation:
 
 ``` kotlin
@@ -195,7 +198,7 @@ since `FunctionLarge` doesn't and can't have types of its parameters.
 So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
 `FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
 
-So `Function0`..`Function22` are provided just as an **optimization** for frequently used functions and
+So `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and
 the number 23 itself has in fact no meaning, i.e. it doesn't limit anything.
 We can change it easily to something else if we want to.
 For example, for `KFunction`, `KMemberFunction`, ... this number will be zero:

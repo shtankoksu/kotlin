@@ -3,16 +3,28 @@
 ## Goals
 
 * Get rid of 23 physical function classes. The problem with them is,
-reflection introduces a few kinds of functions but each of them should be invokable as a normal function as well,
-and so we get `{top-level, member, extension, member-extension, local, ...} * 23` = A LOT of classes in the runtime.
+reflection introduces a few kinds of functions but each of them should be invokable as a normal function as well, and so
+we get `{top-level, member, extension, member-extension, local, ...} * 23` = **a lot** of physical classes in the runtime.
 * Make extension functions coercible to normal functions (with an extra parameter).
 At the moment it's not possible to do `listOfStrings.map(String::length)`
 * Allow functions with more than 23 parameters, theoretically any number of parameters (in practice 255 on JVM).
 
+## Brief solution overview
+
+* Treat extension functions almost like non-extension functions with one extra parameter, allowing to use them interchangeably.
+* Introduce a physical class `Function` and unlimited number of *syhthetic* classes `Function0`, `Function1`, ... in the compiler front-end
+* On JVM, introduce optimized `Function0`..`Function22` and `FunctionLarge` for functions with many parameters.
+When passing a lambda to Kotlin from Java, one will need to implement one of these interfaces.
+* Also on JVM (under the hood) add abstract `FunctionImpl` which implements all of `Fun0`..`Fun22` and `FunLarge`
+(throwing exceptions), and which knows its arity.
+Kotlin lambdas are translated to subclasses of this abstract class, passing the correct arity to the super constructor.
+* Provide a way to get arity of an arbitrary `Function` object (pretty straightforward).
+* Hack `is/as FunctionN` in codegen (and probably `KClass.cast()` in reflection) to check against `FunctionImpl` and its arity.
+
 ## Extension functions
 
 Extension function type `T.(P) -> R` is now just a shorthand for `[kotlin.extension] Function2<T, P, R>`.
-`kotlin.extension` is a built-in annotation only applicable to types.
+`kotlin.extension` is a **type annotation** defined in built-ins.
 So effectively functions and extension functions now have the same type,
 how can we make extension function expressions support extension function call syntax?
 
@@ -40,6 +52,7 @@ functions as well, which is something we don't want to happen! Example:
 val lengthHacked: (String) -> Int = { it.length }
 
 fun test() = "".lengthHacked()  // <-- bad! The declared function accepts a single non-receiver argument
+                                // and is not designed to be invoked as an extension
 ```
 
 And here we introduce the following **restriction**: given a call `object.foo(arguments)`,
@@ -90,7 +103,7 @@ There are 23 function traits in `kotlin.jvm.internal`: `Function0`, `Function1`,
 Here's `Function1` declaration, for example:
 
 ``` kotlin
-package kotlin.jvm.internal
+package kotlin.platform.jvm
 
 trait Function1<in P0, out R> : kotlin.Function<R> {
     fun invoke(p0: P0): R
@@ -99,8 +112,8 @@ trait Function1<in P0, out R> : kotlin.Function<R> {
 
 These traits are supposed to be inherited from Java when passing lambdas to Kotlin.
 
-TODO: they shouldn't be in `kotlin.jvm.internal` then. But they can't be in `kotlin.jvm` as well -- one should use a platform-agnostic
-`kotlin.FunctionN` instead. Will there be some kind of a Java-interface-like package in Kotlin JVM runtime?
+Package `kotlin.platform.jvm` is supposed to contain interfaces which help use Kotlin from Java.
+(And not from Kotlin, because normally you would use `kotlin.FunctionN` there.)
 
 ## Translation of Kotlin lambdas
 
@@ -109,29 +122,36 @@ There's also `FunctionImpl` abstract class at runtime which helps in implementin
 ``` kotlin
 package kotlin.jvm.internal
 
-abstract class FunctionImpl(val arity: Int) : Function<Any?> {
-    fun invoke(): Any? = throw UnsupportedOperationException()
-    fun invoke(p0: Any?) = throw UnsupportedOperationException()
-    ...
-    fun invoke(p0: Any?, ..., p22: Any?) = throw UnsupportedOperationException()
-    
-    fun apply(vararg p: Any?): Any? = when (arity) {
-        0 -> invoke()
-        1 -> invoke(p[0])
-        2 -> invoke(p[0], p[1])
-        ...
-        23 -> invoke(p[0], ..., p[22])
-        else -> throw UnsupportedOperationException("This is impossible in fact")
+abstract class FunctionImpl(override val arity: Int) :
+    Function<Any?>,
+    Function0<Any?>, Function1<Any?>, ..., ..., Function22<...>,
+    FunctionLarge   // See the next section on FunctionLarge
+{
+    override fun invoke(): Any? {
+        // The default implementation of all "invoke"s invokes "apply"
+        // This is needed for KFunctionImpl (see below)
+        assert(arity == 0)
+        return apply()
     }
     
-    fun toString() = ... (some calculation involving generic runtime signatures)
+    override fun invoke(p1: Any?): Any? {
+        assert(arity == 1)
+        return apply(p1)
+    }
+    
+    ...
+    override fun invoke(p1: Any?, ..., p22: Any?) { ... }
+    
+    override fun apply(vararg p: Any?): Any? = throw UnsupportedOperationException()
+    
+    override fun toString() = ... // Some calculation involving generic runtime signatures
 }
 ```
 
-Each lambda is compiled to an anonymous class which inherits from `FunctionImpl` and the corresponding `FunctionN`:
+Each lambda is compiled to an anonymous class which inherits from `FunctionImpl` and implements the corresponding `invoke`:
 
 ``` kotlin
-object : FunctionImpl(2), Function2 {
+object : FunctionImpl(2) {
     override fun invoke(p0: Any?, p1: Any?): Any? { ... /* code */ }
 }
 ```
@@ -141,7 +161,7 @@ object : FunctionImpl(2), Function2 {
 To support functions with many parameters there's a special trait in JVM runtime:
 
 ``` kotlin
-package kotlin.jvm.internal
+package kotlin.platform.jvm
 
 trait FunctionLarge<out R> : kotlin.Function<R> {
     val arity: Int
@@ -154,25 +174,24 @@ TODO: naming
 And another type annotation:
 
 ``` kotlin
-package kotlin.jvm.internal
+package kotlin.platform.jvm
 
 annotation class arity(val value: Int)
 ```
 
-A lambda type with many parameters on JVM is translated to `FunctionLarge` annotated with the actual arity.
-Each lambda value is compiled to an anonymous class which overrides `arity` and `apply()`:
+A lambda type with 42 parameters on JVM is translated to `[arity(42)] FunctionLarge`.
+A lambda is compiled to an anonymous class which overrides `apply()` instead of `invoke()`:
 
 ``` kotlin
-object : FunctionLarge {
+object : FunctionImpl(42) {
     override fun apply(vararg p: Any?): Any? { ... /* code */ }
-    override val arity: Int get() = 42
 }
 ```
 
-TODO: should we also provide `invoke` with 42 parameters here? Will be fine even without it if we only call `apply` statically on functions
-with many parameters.
+TODO: maybe also assert that `p`'s size is 42 in the beginning of `apply`?
 
-Note that when we analyze Kotlin sources we have type arguments for `FunctionLarge`, but they are lost after compilation.
+Note that when we analyze Kotlin sources we have type arguments for `Function42`, but they are lost after compilation
+since `FunctionLarge` doesn't and can't have types of its parameters.
 So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
 `FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
 
@@ -180,8 +199,6 @@ So `Function0`..`Function22` are provided just as an **optimization** for freque
 the number 23 itself has in fact no meaning, i.e. it doesn't limit anything.
 We can change it easily to something else if we want to.
 For example, for `KFunction`, `KMemberFunction`, ... this number will be zero:
-
-TODO: review these declarations
 
 ``` kotlin
 package kotlin.reflect
@@ -194,12 +211,22 @@ trait KFunction<out R> : Function<R> {
 ``` kotlin
 package kotlin.reflect.jvm.internal
 
-abstract class KFunctionImpl(name, owner, arity, ...) : FunctionImpl(arity) {
-    // Reflection-specific stuff
-    // The only method which is abstract in this class is the needed invoke (or apply for many arguments),
-    // and it will be generated into specific subclasses (created by function references)
+open class KFunctionImpl(name, owner, arity, ...) : KFunction<Any?>, FunctionImpl(arity) {
+    ... // Reflection-specific stuff
+    
+    // Remember that each "invoke" delegates to "apply" with assertion by default.
+    // We're overriding only "apply" here and magically a callable reference
+    // will start to work as Function5 for example
+    override fun apply(vararg p: Any?): Any? {
+        owner.getMethod(name, ...).invoke(p)  // Java reflection
+    }
 }
 ```
+
+TODO: a performance problem: we pass arity to `FunctionImpl`'s constructor,
+which may involve a lot of the eager computation (finding the method in a Class).
+Maybe make `arity` an abstract property in `FunctionImpl`, create a subclass `Lambda` with a concrete field for lambdas,
+and for `KFunction`s just implement it lazily
 
 ## Arity and invocation with vararg
 
@@ -218,22 +245,23 @@ This is the (intrinsic) implementation of `arity` (`apply` is essentially the sa
 
 ``` kotlin
 fun Function<*>.calculateArity() {
-    return if (function is FunctionImpl) {  // This handles the case of small lambdas created from Kotlin
+    return if (function is FunctionImpl) {  // This handles the case of lambdas created from Kotlin
         (function as FunctionImpl).arity
     }
-    else when (function) {  // This handles all other lambdas, e.g. created from Java
+    else when (function) {  // This handles all other lambdas, i.e. created from Java
         is Function0 -> 0
         is Function1 -> 1
         ...
         is Function22 -> 22
         is FunctionLarge -> (function as FunctionLarge).arity
-        else -> throw UnsupportedOperationException()  // TODO: maybe do something funny here, e.g. find 'invoke' reflectively
+        else -> throw UnsupportedOperationException()  // TODO: maybe do something funny here,
+                                                       // e.g. find 'invoke' reflectively
     }
 }
 ```
 
+## `is`/`as` hack
 
-
-
+TODO
 
 

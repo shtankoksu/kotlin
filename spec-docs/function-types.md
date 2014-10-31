@@ -39,7 +39,7 @@ We declare `invokeExtension` to be available on all extension functions:
 package kotlin
 
 ...
-fun <T, P0, R> (T.(P0) -> R).invokeExtension(p0: P0): R = this(p0)
+fun <T, P1, R> (T.(P1) -> R).invokeExtension(p1: P1): R = this(p1)
 ...
 ```
 
@@ -105,8 +105,8 @@ Here's `Function1` declaration, for example:
 ``` kotlin
 package kotlin.platform.jvm
 
-trait Function1<in P0, out R> : kotlin.Function<R> {
-    fun invoke(p0: P0): R
+trait Function1<in P1, out R> : kotlin.Function<R> {
+    fun invoke(p1: P1): R
 }
 ```
 
@@ -124,7 +124,7 @@ package kotlin.jvm.internal
 
 abstract class FunctionImpl(override val arity: Int) :
     Function<Any?>,
-    Function0<Any?>, Function1<Any?>, ..., ..., Function22<...>,
+    Function0<Any?>, Function1<Any?, Any?>, ..., ..., Function22<...>,
     FunctionLarge   // See the next section on FunctionLarge
 {
     override fun invoke(): Any? {

@@ -35,7 +35,7 @@ We introduce the following convention: expression `foo` of type `Foo` can be use
 with the corresponding parameters available on the type `Foo`.
 This function may be declared in class `Foo` or somewhere as an extension to `Foo`.
 
-> Note that at the moment this convention is not so convenient: there must be a **member extension**
+> Note that at the moment a less convenient convention is used: there must be a **member extension**
 > function `invoke` in the class which you want to be used as an extension function.
 > This means you can't add "extension-function-ness" to a foreign class,
 > since you'd need to declare a function with two receivers.

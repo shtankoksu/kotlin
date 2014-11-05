@@ -204,9 +204,7 @@ object : FunctionImpl(42) {
 }
 ```
 
-> 
-
-> Note that `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and for **Java interop**.
+> Note that `Function0`..`Function22` are provided primarily for **Java interoperability** and as an **optimization** for frequently used functions.
 > We can change it easily to something else if we want to.
 > For example, for `KFunction`, `KMemberFunction`, ... this number will be zero,
 > since there's no point in implementing a hypothetical `KFunction5` from Java.

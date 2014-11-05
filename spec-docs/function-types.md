@@ -243,7 +243,7 @@ These two extensions are located in **platform-agnostic** built-ins.
 package kotlin
 
 intrinsic val Function<*>.arity: Int
-intrinsic fun Function<R>.apply(vararg p: Any?): R
+intrinsic fun <R> Function<R>.apply(vararg p: Any?): R
 ```
 
 But they don't have any implementation there.

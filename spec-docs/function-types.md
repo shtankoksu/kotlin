@@ -9,11 +9,10 @@ we get `{top-level, member, extension, member-extension, local, ...} * 23` = **a
 At the moment it's not possible to do `listOfStrings.map(String::length)`
 * Allow functions with more than 23 parameters, theoretically any number of parameters (in practice 255 on JVM).
 * At the same time, allow to implement Kotlin functions easily from Java: `new Function2() { ... }` and overriding `invoke` only would be the best.
-(But, of course, it makes no sense to introduce 256 interfaces for Java interop to satisfy the other goals.)
 
 ## Brief solution overview
 
-* Treat extension functions almost like non-extension functions with one extra parameter, allowing to use them interchangeably.
+* Treat extension functions almost like non-extension functions with one extra parameter, allowing to use them almost interchangeably.
 * Introduce a physical class `Function` and unlimited number of *syhthetic* classes `Function0`, `Function1`, ... in the compiler front-end
 * On JVM, introduce `Function0`..`Function22`, which are optimized in a certain way,
 and `FunctionLarge` for functions with many parameters.
@@ -291,8 +290,22 @@ fun isFunctionN(x: Any?, n: Int): Boolean {
 }
 ```
 
-`as FunctionN` should do the same, namely check if `isFunctionN(instance, N)`,
-and checkcast if it is or throw exception if not.
+`as FunctionN` should check if `isFunctionN(instance, N)`, and checkcast if it is or throw exception if not.
 
 A downside is that `instanceof Function5` obviously won't work correctly from Java.
 
+## How this will help reflection
+
+The saddest part of this story is that all `K*FunctionN` interfaces should be hacked identically to `FunctionN`.
+The compiler should resolve `KFunctionN` for any `N`, IDEs should synthesize sources when needed,
+`is`/`as` should be handled similarly etc.
+
+However, we **won't introduce multitudes of `KFunction`s at runtime**.
+The two reasons we did it for `Function`s were Java interop and lambda performance, and they both are not so relevant here.
+A great aid was that the contents of each `Function` were trivial and easy to duplicate (23-plicate?),
+which is not a case at all for `KFunction`s: they also contain code related to reflection.
+
+So for reflection there will be:
+* **synthetic** classes `KFunction0`, `KFunction1`, ..., `KMemberFunction0`, ..., `KMemberFunction42`, ...
+* **physical** (interface) classes `KFunction`, `KMemberFunction`, ... (defined in `kotlin.reflect`)
+* **physical** JVM runtime implementation classes `KFunctionImpl`, `KMemberFunctionImpl`, ... (defined in `kotlin.reflect.jvm.internal`)

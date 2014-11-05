@@ -66,7 +66,7 @@ fun test() = "".lengthHacked()  // <-- bad! The declared function accepts a sing
 
 And here we introduce the following **restriction**: given a call `object.foo(arguments)`,
 if `foo` is resolved **exactly** to the built-in extension function `invokeExtension`,
-then the call will not compile unless its receiver value is an object of the **exact** type `[extension] FunctionN`.
+then the call *will not compile* unless its receiver value is an object of the **exact** type `[extension] FunctionN`.
 So `invokeExtension` will yield an error when used on `FunctionN` objects and objects of `FunctionN` subtypes.
 
 To make your class invokable as an extension you only need to declare `invokeExtension`.
@@ -200,15 +200,11 @@ A lambda is compiled to an anonymous class which overrides `apply()` instead of 
 ``` kotlin
 object : FunctionImpl(42) {
     override fun apply(vararg p: Any?): Any? { ... /* code */ }
+    // TODO: maybe assert that `p`'s size is 42 in the beginning of `apply`?
 }
 ```
 
-> TODO: maybe also assert that `p`'s size is 42 in the beginning of `apply`?
-
-Note that when we analyze Kotlin sources we have type arguments for `Function42`, but they are lost after compilation
-since `FunctionLarge` doesn't and can't have types of its parameters.
-So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
-`FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
+> 
 
 > Note that `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and for **Java interop**.
 > We can change it easily to something else if we want to.
@@ -232,6 +228,11 @@ So when a large function is passed from Java to Kotlin, the object will need to 
         public String apply(Object... p) { return "42"; }
     }
 ```
+
+> Note that when we analyze Kotlin sources we have type arguments for `Function42`, but they are lost after compilation
+> since `FunctionLarge` doesn't and can't have types of its parameters.
+> So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
+> `FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
 
 ## Arity and invocation with vararg
 

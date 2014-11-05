@@ -35,18 +35,25 @@ We introduce the following convention: expression `foo` of type `Foo` can be use
 with the corresponding parameters available on the type `Foo`.
 This function may be declared in class `Foo` or somewhere as an extension to `Foo`.
 
+> Note that at the moment this convention is not so convenient: there must be a **member extension**
+> function `invoke` in the class which you want to be used as an extension function.
+> This means you can't add "extension-function-ness" to a foreign class,
+> since you'd need to declare a function with two receivers.
+> The new approach will solve this problem.
+
 We declare `invokeExtension` to be available on all extension functions:
 
 ``` kotlin
 package kotlin
 
 ...
+fun <T, R> (T.() -> R).invokeExtension(): R = this()
 fun <T, P1, R> (T.(P1) -> R).invokeExtension(p1: P1): R = this(p1)
 ...
 ```
 
 So now an expression type-checked to an "extension function type" can be used with the desired syntax.
-**But**, since a function type and a corresponding extension function type effectively have the same classifier (`FunctionN`),
+But, since a function type and a corresponding extension function type effectively have the same classifier (`FunctionN`),
 they are coercible to each other and therefore our `invokeExtension` will be applicable to the usual
 functions as well, which is something we don't want to happen! Example:
 
@@ -58,8 +65,8 @@ fun test() = "".lengthHacked()  // <-- bad! The declared function accepts a sing
 ```
 
 And here we introduce the following **restriction**: given a call `object.foo(arguments)`,
-if `foo` is resolved exactly to the built-in extension function `invokeExtension`,
-then the call will not compile unless its receiver value is an object of the exact type `[extension] FunctionN`.
+if `foo` is resolved **exactly** to the built-in extension function `invokeExtension`,
+then the call will not compile unless its receiver value is an object of the **exact** type `[extension] FunctionN`.
 So `invokeExtension` will yield an error when used on `FunctionN` objects and objects of `FunctionN` subtypes.
 
 To make your class invokable as an extension you only need to declare `invokeExtension`.
@@ -67,12 +74,12 @@ Declaring `invoke` (and maybe overriding it from `FunctionN`) will only make you
 Inheriting from a function type thus makes sense if you want your class to behave like a simple function.
 Inheriting from an extension function type however makes no sense and should be prohibited / frowned upon.
 In a broad sense, providing type annotations on supertypes (which is what inheriting from an extension function is)
-probably should be diagnosed in the compiler.
+maybe should be diagnosed in the compiler (maybe not, more knowledge needed).
 
-The problem of representing functions therefore is fully reduced to the usual function types,
-with additional `extension` annotations supplied where needed.
+With this we'll get rid of classes `ExtensionFunction0`, `ExtensionFunction1`, ...
+and the rest of this article will deal only with usual functions.
 
-## Types for type checker and for JVM runtime
+## FunctionN types
 
 The arity of the functional trait that the type checker can create in theory **is not limited** to any number,
 but in practice should be limited to 255 on JVM.
@@ -81,6 +88,8 @@ These traits are named `kotlin.Function0<R>`, `kotlin.Function1<P0, R>`, ..., `k
 They are *virtual* in that they have no sources and no runtime representation. Type checker creates the corresponding descriptors on demand,
 IDE creates corresponding sources on demand as well. Each of them inherits from `kotlin.Function` (described below) and contains a single
 `fun invoke()` with the corresponding number of parameters and return type.
+
+> TODO: investigate exactly what changes in IDE should be done and if they are possible at all.
 
 On JVM such `FunctionN` types correspond to the physical classes `kotlin.jvm.internal.FunctionN` for `0 <= N <= 22`,
 and to the special `FunctionLarge` class for all other `N`.
@@ -101,7 +110,7 @@ and we don't want to override anything besides `invoke()` when doing it from Jav
 
 ## Functions with 0..22 parameters at runtime
 
-There are 23 function traits in `kotlin.jvm.internal`: `Function0`, `Function1`, ..., `Function22`.
+There are 23 function traits in `kotlin.platform.jvm`: `Function0`, `Function1`, ..., `Function22`.
 Here's `Function1` declaration, for example:
 
 ``` kotlin
@@ -120,6 +129,7 @@ Package `kotlin.platform.jvm` is supposed to contain interfaces which help use K
 ## Translation of Kotlin lambdas
 
 There's also `FunctionImpl` abstract class at runtime which helps in implementing `arity` and vararg-invocation.
+It inherits from all the functions, unfortunately (more on that later).
 
 ``` kotlin
 package kotlin.jvm.internal
@@ -130,7 +140,7 @@ abstract class FunctionImpl(override val arity: Int) :
     FunctionLarge   // See the next section on FunctionLarge
 {
     override fun invoke(): Any? {
-        // The default implementation of all "invoke"s invokes "apply"
+        // Default implementations of all "invoke"s invoke "apply"
         // This is needed for KFunctionImpl (see below)
         assert(arity == 0)
         return apply()
@@ -154,7 +164,7 @@ Each lambda is compiled to an anonymous class which inherits from `FunctionImpl`
 
 ``` kotlin
 object : FunctionImpl(2) {
-    override fun invoke(p0: Any?, p1: Any?): Any? { ... /* code */ }
+    override fun invoke(p1: Any?, p2: Any?): Any? { ... /* code */ }
 }
 ```
 
@@ -171,10 +181,10 @@ trait FunctionLarge<out R> : kotlin.Function<R> {
 }
 ```
 
-TODO: naming
+> TODO: naming
 
-TODO: usual hierarchy problems: there are no such members in `kotlin.Function42` (it only has `invoke()`),
-so inheritance from `FunctionN` for big `N` will need to be hacked somehow
+> TODO: usual hierarchy problems: there are no such members in `kotlin.Function42` (it only has `invoke()`),
+> so inheritance from `FunctionN` for big `N` will need to be hacked somehow
 
 And another type annotation:
 
@@ -193,45 +203,35 @@ object : FunctionImpl(42) {
 }
 ```
 
-TODO: maybe also assert that `p`'s size is 42 in the beginning of `apply`?
+> TODO: maybe also assert that `p`'s size is 42 in the beginning of `apply`?
 
 Note that when we analyze Kotlin sources we have type arguments for `Function42`, but they are lost after compilation
 since `FunctionLarge` doesn't and can't have types of its parameters.
 So we should serialize this information (probably to some type annotation as well) and load it for at least Kotlin large lambdas to work.
 `FunctionLarge` without such annotation (coming for example from Java) will be treated as `(Any?, Any?, ...) -> Any?`.
 
-So `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and for Java interop.
-We can change it easily to something else if we want to.
-For example, for `KFunction`, `KMemberFunction`, ... this number will be zero,
-since there's no point in implementing a hypothetical `KFunction5` from Java.
+> Note that `Function0`..`Function22` are provided primarily as an **optimization** for frequently used functions and for **Java interop**.
+> We can change it easily to something else if we want to.
+> For example, for `KFunction`, `KMemberFunction`, ... this number will be zero,
+> since there's no point in implementing a hypothetical `KFunction5` from Java.
+
+So when a large function is passed from Java to Kotlin, the object will need to inherit from `FunctionLarge`:
 
 ``` kotlin
-package kotlin.reflect
-
-trait KFunction<out R> : Function<R> {
-    fun apply(vararg p: Any?): R
-}
+    // Kotlin
+    fun fooBar(f: Function42<*,*,...,*>) = f(...)
 ```
 
-``` kotlin
-package kotlin.reflect.jvm.internal
-
-open class KFunctionImpl(name, owner, arity, ...) : KFunction<Any?>, FunctionImpl(arity) {
-    ... // Reflection-specific stuff
-    
-    // Remember that each "invoke" delegates to "apply" with assertion by default.
-    // We're overriding only "apply" here and magically a callable reference
-    // will start to work as Function5 for example
-    override fun apply(vararg p: Any?): Any? {
-        owner.getMethod(name, ...).invoke(p)  // Java reflection
+``` java
+    // Java
+    fooBar(new FunctionLarge<String>() {
+        @Override
+        public int getArity() { return 42; }
+        
+        @Override
+        public String apply(Object... p) { return "42"; }
     }
-}
 ```
-
-TODO: a performance problem: we pass arity to `FunctionImpl`'s constructor,
-which may involve a lot of the eager computation (finding the method in a Class).
-Maybe make `arity` an abstract property in `FunctionImpl`, create a subclass `Lambda` with a concrete field for lambdas,
-and for `KFunction`s just implement it lazily
 
 ## Arity and invocation with vararg
 
@@ -245,11 +245,12 @@ intrinsic val Function<*>.arity: Int
 intrinsic fun Function<R>.apply(vararg p: Any?): R
 ```
 
-But they don't have any implementation there. The reason is, they need platform-specific function implementation to work efficiently.
-This is the (intrinsic) implementation of `arity` (`apply` is essentially the same):
+But they don't have any implementation there.
+The reason is, they need **platform-specific** function implementation to work efficiently.
+This is the JVM implementation of the `arity` intrinsic (`apply` is essentially the same):
 
 ``` kotlin
-fun Function<*>.calculateArity() {
+fun Function<*>.calculateArity(): Int {
     return if (function is FunctionImpl) {  // This handles the case of lambdas created from Kotlin
         (function as FunctionImpl).arity
     }
@@ -306,6 +307,35 @@ A great aid was that the contents of each `Function` were trivial and easy to du
 which is not a case at all for `KFunction`s: they also contain code related to reflection.
 
 So for reflection there will be:
-* **synthetic** classes `KFunction0`, `KFunction1`, ..., `KMemberFunction0`, ..., `KMemberFunction42`, ...
+* **synthetic** classes `KFunction0`, `KFunction1`, ..., `KMemberFunction0`, ..., `KMemberFunction42`, ... (defined in `kotlin`)
 * **physical** (interface) classes `KFunction`, `KMemberFunction`, ... (defined in `kotlin.reflect`)
 * **physical** JVM runtime implementation classes `KFunctionImpl`, `KMemberFunctionImpl`, ... (defined in `kotlin.reflect.jvm.internal`)
+
+``` kotlin
+package kotlin.reflect
+
+trait KFunction<out R> : Function<R> {
+    fun apply(vararg p: Any?): R
+    ... // Reflection-specific declarations
+}
+```
+
+``` kotlin
+package kotlin.reflect.jvm.internal
+
+open class KFunctionImpl(name, owner, arity, ...) : KFunction<Any?>, FunctionImpl(arity) {
+    ... // Reflection-specific code
+    
+    // Remember that each "invoke" delegates to "apply" with assertion by default.
+    // We're overriding only "apply" here and magically a callable reference
+    // will start to work as the needed FunctionN
+    override fun apply(vararg p: Any?): Any? {
+        owner.getMethod(name, ...).invoke(p)  // Java reflection
+    }
+}
+```
+
+> TODO: a performance problem: we pass arity to `FunctionImpl`'s constructor,
+> which may involve a lot of the eager computation (finding the method in a Class).
+> Maybe make `arity` an abstract property in `FunctionImpl`, create a subclass `Lambda` with a concrete field for lambdas,
+> and for `KFunction`s just implement it lazily

@@ -16,9 +16,9 @@ Enabling SAM conversions on Java 8 would also be terrific.
 * Treat extension functions almost like non-extension functions with one extra parameter, allowing to use them almost interchangeably.
 * Introduce a physical class `Function` and unlimited number of *fictitious* (synthetic) classes `Function0`, `Function1`, ... in the compiler front-end
 * On JVM, introduce `Function0`..`Function22`, which are optimized in a certain way,
-and `FunctionLarge` for functions with many parameters.
+and `FunctionN` for functions with 23+ parameters.
 When passing a lambda to Kotlin from Java, one will need to implement one of these interfaces.
-* Also on JVM (under the hood) add abstract `FunctionImpl` which implements all of `Fun0`..`Fun22` and `FunLarge`
+* Also on JVM (under the hood) add abstract `FunctionImpl` which implements all of `Fun0`..`Fun22` and `FunN`
 (throwing exceptions), and which knows its arity.
 Kotlin lambdas are translated to subclasses of this abstract class, passing the correct arity to the super constructor.
 * Provide a way to get arity of an arbitrary `Function` object (pretty straightforward).
@@ -141,7 +141,7 @@ package kotlin.jvm.internal
 abstract class FunctionImpl(override val arity: Int) :
     Function<Any?>,
     Function0<Any?>, Function1<Any?, Any?>, ..., ..., Function22<...>,
-    FunctionLarge   // See the next section on FunctionLarge
+    FunctionN   // See the next section on FunctionN
 {
     override fun invoke(): Any? {
         // Default implementations of all "invoke"s invoke "invokeVararg"
@@ -187,13 +187,11 @@ To support functions with many parameters there's a special trait in JVM runtime
 ``` kotlin
 package kotlin.platform.jvm
 
-trait FunctionLarge<out R> : kotlin.Function<R> {
+trait FunctionN<out R> : kotlin.Function<R> {
     val arity: Int
     fun invokeVararg(vararg p: Any?): R
 }
 ```
-
-> TODO: naming
 
 > TODO: usual hierarchy problems: there are no such members in `kotlin.Function42` (it only has `invoke()`),
 > so inheritance from `Function42` will need to be hacked somehow
@@ -206,7 +204,7 @@ package kotlin.platform.jvm
 annotation class arity(val value: Int)
 ```
 
-A lambda type with 42 parameters on JVM is translated to `[arity(42)] FunctionLarge`.
+A lambda type with 42 parameters on JVM is translated to `[arity(42)] FunctionN`.
 A lambda is compiled to an anonymous class which overrides `invokeVararg()` instead of `invoke()`:
 
 ``` kotlin
@@ -221,7 +219,7 @@ object : FunctionImpl(42) {
 > For example, for `KFunction`, `KMemberFunction`, ... this number will be zero,
 > since there's no point in implementing a hypothetical `KFunction5` from Java.
 
-So when a large function is passed from Java to Kotlin, the object will need to inherit from `FunctionLarge`:
+So when a large function is passed from Java to Kotlin, the object will need to inherit from `FunctionN`:
 
 ``` kotlin
     // Kotlin
@@ -230,7 +228,7 @@ So when a large function is passed from Java to Kotlin, the object will need to 
 
 ``` java
     // Java
-    fooBar(new FunctionLarge<String>() {
+    fooBar(new FunctionN<String>() {
         @Override
         public int getArity() { return 42; }
         
@@ -239,9 +237,9 @@ So when a large function is passed from Java to Kotlin, the object will need to 
     }
 ```
 
-> Note that `[arity(N)] FunctionLarge<R>` coming from Java code will be treated as `(Any?, Any?, ..., Any?) -> R`,
+> Note that `[arity(N)] FunctionN<R>` coming from Java code will be treated as `(Any?, Any?, ..., Any?) -> R`,
 > where the number of parameters is `N`.
-> If there's no `arity` annotation on the type `FunctionLarge<R>`, it won't be loaded as a function type,
+> If there's no `arity` annotation on the type `FunctionN<R>`, it won't be loaded as a function type,
 > but rather as just a classifier type with an argument.
 
 
@@ -271,7 +269,7 @@ fun Function<*>.calculateArity(): Int {
         is Function1 -> 1
         ...
         is Function22 -> 22
-        is FunctionLarge -> (function as FunctionLarge).arity
+        is FunctionN -> (function as FunctionN).arity
         else -> throw UnsupportedOperationException()  // TODO: maybe do something funny here,
                                                        // e.g. find 'invoke' reflectively
     }
@@ -280,7 +278,7 @@ fun Function<*>.calculateArity(): Int {
 
 ## `is`/`as` hack
 
-The newly introduced `FunctionImpl` class inherits from all the `Function0`, `Function1`, ..., `FunctionLarge`.
+The newly introduced `FunctionImpl` class inherits from all the `Function0`, `Function1`, ..., `FunctionN`.
 This means that `anyLambda is Function2<*, *, *>` will be true for any Kotlin lambda.
 To fix this, we need to hack `is` so that it would reach out to the `FunctionImpl` instance and get its arity.
 
@@ -340,4 +338,5 @@ open class KFunctionImpl(name, owner, arity, ...) : KFunction<Any?>, FunctionImp
 > which may involve a lot of the eager computation (finding the method in a Class).
 > Maybe make `arity` an abstract property in `FunctionImpl`, create a subclass `Lambda` with a concrete field for lambdas,
 > and for `KFunction`s just implement it lazily
+
 

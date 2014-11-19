@@ -262,14 +262,14 @@ This is the JVM implementation of the `arity` intrinsic (`invokeVararg` is essen
 ``` kotlin
 fun Function<*>.calculateArity(): Int {
     return if (function is FunctionImpl) {  // This handles the case of lambdas created from Kotlin
-        (function as FunctionImpl).arity
+        function.arity  // Note the smart cast
     }
     else when (function) {  // This handles all other lambdas, i.e. created from Java
         is Function0 -> 0
         is Function1 -> 1
         ...
         is Function22 -> 22
-        is FunctionN -> (function as FunctionN).arity
+        is FunctionN -> function.arity  // Note the smart cast
         else -> throw UnsupportedOperationException()  // TODO: maybe do something funny here,
                                                        // e.g. find 'invoke' reflectively
     }

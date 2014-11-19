@@ -9,6 +9,7 @@ we get `{top-level, member, extension, member-extension, local, ...} * 23` = **a
 At the moment it's not possible to do `listOfStrings.map(String::length)`
 * Allow functions with more than 23 parameters, theoretically any number of parameters (in practice 255 on JVM).
 * At the same time, allow to implement Kotlin functions easily from Java: `new Function2() { ... }` and overriding `invoke` only would be the best.
+Enabling SAM conversions on Java 8 would also be terrific.
 
 ## Brief solution overview
 

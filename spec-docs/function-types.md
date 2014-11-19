@@ -14,7 +14,7 @@ Enabling SAM conversions on Java 8 would also be terrific.
 ## Brief solution overview
 
 * Treat extension functions almost like non-extension functions with one extra parameter, allowing to use them almost interchangeably.
-* Introduce a physical class `Function` and unlimited number of *syhthetic* classes `Function0`, `Function1`, ... in the compiler front-end
+* Introduce a physical class `Function` and unlimited number of *fictitious* (synthetic) classes `Function0`, `Function1`, ... in the compiler front-end
 * On JVM, introduce `Function0`..`Function22`, which are optimized in a certain way,
 and `FunctionLarge` for functions with many parameters.
 When passing a lambda to Kotlin from Java, one will need to implement one of these interfaces.

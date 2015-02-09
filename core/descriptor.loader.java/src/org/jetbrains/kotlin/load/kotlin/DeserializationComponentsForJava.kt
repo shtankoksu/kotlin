@@ -34,4 +34,7 @@ public class DeserializationComponentsForJava(
             storageManager, moduleDescriptor, classDataFinder, annotationAndConstantLoader, packageFragmentProvider,
             JavaFlexibleTypeCapabilitiesDeserializer
     )
+
+    public val javaClassDataFinder: JavaClassDataFinder
+        get() = components.classDataFinder as JavaClassDataFinder
 }

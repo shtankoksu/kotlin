@@ -19,20 +19,20 @@ package org.jetbrains.kotlin.load.java.lazy
 import org.jetbrains.kotlin.storage.StorageManager
 import org.jetbrains.kotlin.load.java.lazy.types.LazyJavaTypeResolver
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
-import org.jetbrains.kotlin.load.java.structure.JavaTypeParameter
 import org.jetbrains.kotlin.load.java.JavaClassFinder
 import org.jetbrains.kotlin.load.java.components.*
-import org.jetbrains.kotlin.load.kotlin.DeserializedDescriptorResolver
 import org.jetbrains.kotlin.load.kotlin.KotlinClassFinder
 import org.jetbrains.kotlin.load.java.structure.JavaPropertyInitializerEvaluator
 import org.jetbrains.kotlin.load.java.sources.JavaSourceElementFactory
 import org.jetbrains.kotlin.load.java.structure.JavaTypeParameterListOwner
+import kotlin.properties.Delegates
+import javax.inject.Inject
+import org.jetbrains.kotlin.load.kotlin.DeserializationComponentsForJava
 
 open class GlobalJavaResolverContext(
         val storageManager: StorageManager,
         val finder: JavaClassFinder,
         val kotlinClassFinder: KotlinClassFinder,
-        val deserializedDescriptorResolver: DeserializedDescriptorResolver,
         val externalAnnotationResolver: ExternalAnnotationResolver,
         val externalSignatureResolver: ExternalSignatureResolver,
         val errorReporter: ErrorReporter,
@@ -42,7 +42,14 @@ open class GlobalJavaResolverContext(
         val samConversionResolver: SamConversionResolver,
         val sourceElementFactory: JavaSourceElementFactory,
         val moduleClassResolver: ModuleClassResolver
-)
+) {
+    open var deserialization: DeserializationComponentsForJava by Delegates.notNull()
+
+    Inject
+    public fun setDeserializationComponents(deserialization: DeserializationComponentsForJava) {
+        this.deserialization = deserialization
+    }
+}
 
 open class LazyJavaResolverContext(
         globalContext: GlobalJavaResolverContext,
@@ -53,7 +60,6 @@ open class LazyJavaResolverContext(
         globalContext.storageManager,
         globalContext.finder,
         globalContext.kotlinClassFinder,
-        globalContext.deserializedDescriptorResolver,
         globalContext.externalAnnotationResolver,
         globalContext.externalSignatureResolver,
         globalContext.errorReporter,
@@ -64,6 +70,13 @@ open class LazyJavaResolverContext(
         globalContext.sourceElementFactory,
         globalContext.moduleClassResolver
 ) {
+    private val savedGlobal = globalContext
+
+    // TODO: improve this
+    override var deserialization: DeserializationComponentsForJava
+        get() = savedGlobal.deserialization
+        set(value) {}
+
     val typeResolver = LazyJavaTypeResolver(this, typeParameterResolver)
 }
 

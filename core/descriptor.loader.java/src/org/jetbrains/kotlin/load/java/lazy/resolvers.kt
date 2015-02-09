@@ -22,10 +22,11 @@ import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
 import org.jetbrains.kotlin.load.java.structure.JavaTypeParameter
 import org.jetbrains.kotlin.load.java.lazy.descriptors.LazyJavaTypeParameterDescriptor
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
-import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinaryClass
-import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.load.java.structure.JavaTypeParameterListOwner
+import org.jetbrains.kotlin.serialization.jvm.JvmProtoBufUtil
+import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
+import org.jetbrains.kotlin.load.kotlin.DeserializationComponentsForJava
 
 //TODO: (module refactoring) usages of this interface should be replaced by ModuleClassResolver
 trait LazyJavaClassResolver {
@@ -61,45 +62,8 @@ class LazyJavaTypeParameterResolver(
     }
 }
 
-data class JavaClassLookupResult(val jClass: JavaClass? = null, val kClass: ClassDescriptor? = null)
-
-fun LazyJavaResolverContext.lookupBinaryClass(javaClass: JavaClass): ClassDescriptor? {
-    val kotlinJvmBinaryClass = kotlinClassFinder.findKotlinClass(javaClass)
-    return resolveBinaryClass(kotlinJvmBinaryClass)?.kClass
-}
-
-fun LazyJavaResolverContext.findClassInJava(classId: ClassId): JavaClassLookupResult {
-    val kotlinClass = kotlinClassFinder.findKotlinClass(classId)
-    val binaryClassResult = resolveBinaryClass(kotlinClass)
-    if (binaryClassResult != null) return binaryClassResult
-
-    val javaClass = finder.findClass(classId)
-    if (javaClass == null) return JavaClassLookupResult()
-
-    // Light classes are not proper binaries either
-    if (javaClass.getOriginKind() == JavaClass.OriginKind.KOTLIN_LIGHT_CLASS) return JavaClassLookupResult()
-
-    return JavaClassLookupResult(javaClass)
-
-}
-
-private fun LazyJavaResolverContext.resolveBinaryClass(kotlinClass: KotlinJvmBinaryClass?): JavaClassLookupResult? {
+fun DeserializationComponentsForJava.deserializeKotlinClass(kotlinClass: KotlinJvmBinaryClass?): ClassDescriptor? {
     if (kotlinClass == null) return null
-
-    val header = kotlinClass.getClassHeader()
-    if (!header.isCompatibleAbiVersion) {
-        errorReporter.reportIncompatibleAbiVersion(kotlinClass, header.version)
-    }
-    else if (header.kind == KotlinClassHeader.Kind.CLASS) {
-        val descriptor = deserializedDescriptorResolver.resolveClass(kotlinClass)
-        if (descriptor != null) {
-            return JavaClassLookupResult(kClass = descriptor)
-        }
-    }
-    else {
-        // This is a package or trait-impl or something like that
-        return JavaClassLookupResult()
-    }
-
-    return null
+    val data = javaClassDataFinder.readData(kotlinClass, KotlinClassHeader.Kind.CLASS) ?: return null
+    return components.classDeserializer.deserializeClass(kotlinClass.getClassId(), JvmProtoBufUtil.readClassDataFrom(data))
 }

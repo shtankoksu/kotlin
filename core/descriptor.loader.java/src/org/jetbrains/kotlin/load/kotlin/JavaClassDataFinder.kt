@@ -21,15 +21,28 @@ import org.jetbrains.kotlin.serialization.deserialization.ClassDataFinder
 import org.jetbrains.kotlin.serialization.ClassData
 import org.jetbrains.kotlin.serialization.jvm.JvmProtoBufUtil
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
+import org.jetbrains.kotlin.load.java.components.ErrorReporter
 
 public class JavaClassDataFinder(
         private val kotlinClassFinder: KotlinClassFinder,
-        private val deserializedDescriptorResolver: DeserializedDescriptorResolver
+        private val errorReporter: ErrorReporter
 ) : ClassDataFinder {
     override fun findClassData(classId: ClassId): ClassData? {
         val javaClassId = DeserializedResolverUtils.kotlinClassIdToJavaClassId(classId)
         val kotlinJvmBinaryClass = kotlinClassFinder.findKotlinClass(javaClassId) ?: return null
-        val data = deserializedDescriptorResolver.readData(kotlinJvmBinaryClass, KotlinClassHeader.Kind.CLASS) ?: return null
+        val data = readData(kotlinJvmBinaryClass, KotlinClassHeader.Kind.CLASS) ?: return null
         return JvmProtoBufUtil.readClassDataFrom(data)
+    }
+
+    fun readData(kotlinClass: KotlinJvmBinaryClass, expectedKind: KotlinClassHeader.Kind): Array<String>? {
+        val header = kotlinClass.getClassHeader()
+        return if (!header.isCompatibleAbiVersion) {
+            errorReporter.reportIncompatibleAbiVersion(kotlinClass, header.version)
+            null
+        }
+        else if (header.kind == expectedKind) {
+            header.annotationData
+        }
+        else null
     }
 }

@@ -21,13 +21,16 @@ import org.jetbrains.kotlin.name.*
 import org.jetbrains.kotlin.load.java.lazy.LazyJavaResolverContext
 import org.jetbrains.kotlin.load.java.structure.JavaPackage
 import org.jetbrains.kotlin.load.java.structure.JavaClass
-import org.jetbrains.kotlin.load.java.lazy.findClassInJava
 import org.jetbrains.kotlin.load.kotlin.PackageClassUtils
 import org.jetbrains.kotlin.resolve.scopes.JetScope
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinaryClass
 import org.jetbrains.kotlin.utils.addIfNotNull
 import org.jetbrains.kotlin.load.java.descriptors.SamConstructorDescriptorKindExclude
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
+import org.jetbrains.kotlin.load.java.lazy.deserializeKotlinClass
+import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
+import org.jetbrains.kotlin.serialization.jvm.JvmProtoBufUtil
+import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedPackageMemberScope
 
 public class LazyPackageFragmentScopeForJavaPackage(
         c: LazyJavaResolverContext,
@@ -40,28 +43,47 @@ public class LazyPackageFragmentScopeForJavaPackage(
     public val kotlinBinaryClass: KotlinJvmBinaryClass?
             = c.kotlinClassFinder.findKotlinClass(PackageClassUtils.getPackageClassId(packageFragment.fqName))
 
-    private val deserializedPackageScope = c.storageManager.createLazyValue {
+    private val deserializedPackageScope = c.storageManager.createLazyValue@scope {(): JetScope ->
         val kotlinBinaryClass = kotlinBinaryClass
-        if (kotlinBinaryClass == null)
-            JetScope.Empty
-        else
-            c.deserializedDescriptorResolver.createKotlinPackageScope(packageFragment, kotlinBinaryClass) ?: JetScope.Empty
+        if (kotlinBinaryClass != null) {
+            val data = c.deserialization.javaClassDataFinder.readData(kotlinBinaryClass, KotlinClassHeader.Kind.PACKAGE_FACADE)
+            if (data != null) {
+                val packageData = JvmProtoBufUtil.readPackageDataFrom(data)
+                // All classes are included in java scope
+                return@scope DeserializedPackageMemberScope(
+                        packageFragment, packageData.getPackageProto(), packageData.getNameResolver(),
+                        c.deserialization.components, { listOf<Name>() }
+                )
+            }
+        }
+
+        JetScope.Empty
     }
 
-    private val classes = c.storageManager.createMemoizedFunctionWithNullableValues<Name, ClassDescriptor> { name ->
+    private val classes = c.storageManager.createMemoizedFunctionWithNullableValues@class {(name: Name): ClassDescriptor? ->
         val classId = ClassId(packageFragment.fqName, SpecialNames.safeIdentifier(name))
-        val (jClass, kClass) = this.c.findClassInJava(classId)
-        if (kClass != null)
-            kClass
-        else if (jClass == null)
-            null
-        else {
-            val classDescriptor = this.c.javaClassResolver.resolveClass(jClass)
+
+        val kotlinClass = c.kotlinClassFinder.findKotlinClass(classId)
+        if (kotlinClass != null) {
+            val header = kotlinClass.getClassHeader()
+
+            // This is a package or trait-impl or something like that
+            if (header.isCompatibleAbiVersion && header.kind != KotlinClassHeader.Kind.CLASS) return@class null
+
+            val classDescriptor = c.deserialization.deserializeKotlinClass(kotlinClass)
+            if (classDescriptor != null) return@class classDescriptor
+        }
+
+        val javaClass = c.finder.findClass(classId)
+        if (javaClass != null) {
+            val classDescriptor = c.javaClassResolver.resolveClass(javaClass)
             assert(classDescriptor == null || classDescriptor.getContainingDeclaration() == packageFragment) {
                 "Wrong package fragment for $classDescriptor, expected $packageFragment"
             }
-            classDescriptor
+            return@class classDescriptor
         }
+
+        null
     }
 
     override fun getClassifier(name: Name): ClassifierDescriptor? = classes(name)

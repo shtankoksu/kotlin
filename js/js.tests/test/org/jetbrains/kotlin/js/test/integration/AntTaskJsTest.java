@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package org.jetbrains.kotlin.integration;
+package org.jetbrains.kotlin.js.test.integration;
 
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.kotlin.integration.AntTaskBaseTest;
 import org.jetbrains.kotlin.js.test.rhino.RhinoFunctionResultChecker;
 import org.jetbrains.kotlin.js.test.rhino.RhinoUtils;
 import org.junit.Rule;
